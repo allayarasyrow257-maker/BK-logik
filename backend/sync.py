@@ -294,7 +294,13 @@ def scrape_car_details(page, source_url: str) -> dict:
 
 
 def download_images(slug: str, image_urls: list[str]) -> list[str]:
-    """Resimleri yerel diske indir. Varsa atla."""
+    """Resimleri yerel diske indir. Varsa atla.
+
+    primeauto.ge art arda hizli isteklerde bazen baglantiyi kesiyor - bu yuzden
+    her resimden once kisa bir bekleme var ve basarisiz olan istekler birkac
+    kez (artan bekleme suresiyle) tekrar deneniyor. Bu olmadan bir arabanin
+    23 resminden sadece ilk 1-2'si iniyor, gerisi sessizce atlaniyordu.
+    """
     car_dir = IMAGES_DIR / slug
     car_dir.mkdir(parents=True, exist_ok=True)
 
@@ -310,15 +316,26 @@ def download_images(slug: str, image_urls: list[str]) -> list[str]:
             local_paths.append(relative_path)
             continue
 
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = resp.read()
+        last_error: Exception | None = None
+        for attempt in range(3):
+            if attempt:
+                time.sleep(1.5 * attempt)
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = resp.read()
                 if len(data) > 500:
                     local_path.write_bytes(data)
                     local_paths.append(relative_path)
-        except Exception as e:
-            print(f"    Resim indirilemedi: {url[:60]}... ({e})")
+                last_error = None
+                break
+            except Exception as e:
+                last_error = e
+
+        if last_error is not None:
+            print(f"    Resim indirilemedi: {url[:60]}... ({last_error})")
+
+        time.sleep(0.3)  # primeauto.ge'yi art arda hizli istekle bloklatmamak icin
 
     return local_paths
 
