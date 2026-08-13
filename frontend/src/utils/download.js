@@ -1,5 +1,6 @@
 import { SERVER_URL } from '../config'
 import { toast } from './toast'
+import { startProgress, updateProgress, finishProgress } from './progressBar'
 
 // Translate with fallback + {{var}} interpolation. `t` is the i18next t()
 // passed in from the calling component so toasts follow the selected language.
@@ -129,16 +130,33 @@ async function shareOrDownload(files) {
   return 'downloaded'
 }
 
-async function toFiles(list, filenameBase) {
-  const files = []
-  for (let i = 0; i < list.length; i++) {
-    try {
-      const blob = await fetchBlob(list[i])
-      const name = list.length === 1 ? `${filenameBase}.jpg` : `${filenameBase}-${i + 1}.jpg`
-      files.push(new File([blob], name, { type: blob.type || 'image/jpeg' }))
-    } catch { /* skip */ }
+// Fetches run FETCH_CONCURRENCY at a time instead of one-by-one — with 20+
+// photos a sequential loop meant nothing downloaded for many seconds while
+// each image was fetched in turn. `onProgress(done, total)` fires after every
+// completed fetch so the caller can drive a progress indicator.
+const FETCH_CONCURRENCY = 6
+
+async function toFiles(list, filenameBase, onProgress) {
+  const files = new Array(list.length)
+  let done = 0
+
+  async function worker(start) {
+    for (let i = start; i < list.length; i += FETCH_CONCURRENCY) {
+      try {
+        const blob = await fetchBlob(list[i])
+        const name = list.length === 1 ? `${filenameBase}.jpg` : `${filenameBase}-${i + 1}.jpg`
+        files[i] = new File([blob], name, { type: blob.type || 'image/jpeg' })
+      } catch { /* skip */ }
+      done++
+      if (onProgress) onProgress(done, list.length)
+    }
   }
-  return files
+
+  const workers = []
+  for (let w = 0; w < Math.min(FETCH_CONCURRENCY, list.length); w++) workers.push(worker(w))
+  await Promise.all(workers)
+
+  return files.filter(Boolean)
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -172,6 +190,7 @@ export async function downloadImages(list, filenameBase = 'image', t) {
   // iOS (Tauri) → save each into Photos with progress.
   if (isApplePlatform()) {
     let ok = 0
+    startProgress()
     try {
       const { photos, invoke } = await nativeApi()
       await ensurePermission(photos, t)
@@ -181,20 +200,31 @@ export async function downloadImages(list, filenameBase = 'image', t) {
           ok++
           toast(tr(t, 'saving', { i: ok, n: list.length }, 'Saving {{i}}/{{n}}…'), 'info', 700)
         } catch { /* skip */ }
+        updateProgress(i + 1, list.length)
       }
       if (ok) toast(tr(t, 'savedCount', { n: ok }, '{{n}} photos saved to gallery'))
       else toast(tr(t, 'saveNone', null, 'No photo could be saved'), 'error', 4000)
     } catch (err) {
       const e = (err && (err.message || String(err))) || ''
       toast(tr(t, 'saveError', { error: e }, 'Save error: {{error}}'), 'error', 4000)
+    } finally {
+      finishProgress()
     }
     return ok
   }
 
   // Android (Tauri) & browsers → one share sheet with all images (or downloads).
-  const files = await toFiles(list, filenameBase)
-  if (!files.length) { toast(tr(t, 'saveNone', null, 'No photo could be saved'), 'error', 4000); return 0 }
-  const res = await shareOrDownload(files)
-  if (res !== 'cancel' && isMobile()) toast(tr(t, 'savedCount', { n: files.length }, '{{n}} photos saved to gallery'))
-  return files.length
+  // Fetches happen in parallel (see toFiles) and the top progress bar tracks
+  // them, so the tab stays fully usable — the user isn't stuck watching a
+  // spinner while 20+ photos download in the background.
+  startProgress()
+  try {
+    const files = await toFiles(list, filenameBase, (done, total) => updateProgress(done, total))
+    if (!files.length) { toast(tr(t, 'saveNone', null, 'No photo could be saved'), 'error', 4000); return 0 }
+    const res = await shareOrDownload(files)
+    if (res !== 'cancel' && isMobile()) toast(tr(t, 'savedCount', { n: files.length }, '{{n}} photos saved to gallery'))
+    return files.length
+  } finally {
+    finishProgress()
+  }
 }
