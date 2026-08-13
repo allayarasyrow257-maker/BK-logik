@@ -1,0 +1,13 @@
+{
+  "identifier": "ios-photos-cap",
+  "description": "iOS photo library save",
+  "platforms": [
+    "iOS"
+  ],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "ios-photos:default"
+  ]
+}

@@ -1,0 +1,31 @@
+1) Backend'i 8001'de çalıştırma
+
+backend/main.py sonuna çalıştırıcı ekledim. Artık iki yoldan da 8001'de kalkar:
+
+cd "BK Logic — копия"
+
+# Yol A (kolay):
+python3 -m backend.main
+
+cd "/Users/pc/Desktop/BK Logic"
+uvicorn backend.main:app --host 0.0.0.0 --port 8001 --reload
+
+
+
+---
+Kullanım örnekleri:
+
+# Simulator'da test et (geliştirme sırasında)
+./ios.sh sim
+
+# Bağlı iPhone'da test et
+./ios.sh device
+
+# Production IPA üret
+./ios.sh build
+
+# Xcode'da aç (signing ayarlamak için)
+./ios.sh open
+
+# Her şey için (iOS + Android production)
+./build-mobile.sh

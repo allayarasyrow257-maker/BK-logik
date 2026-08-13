@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  html {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+    /* Native-app feel: disable page pinch-zoom & double-tap zoom, keep scrolling */
+    touch-action: pan-x pan-y;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+  body {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
+    @apply bg-dark-900 text-white font-sans antialiased;
+  }
+  #root { width: 100%; max-width: 100%; overflow-x: hidden; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-dark-800; }
+  ::-webkit-scrollbar-thumb { @apply bg-dark-500 rounded-full; }
+}
+
+@layer utilities {
+  .gold-gradient {
+    background: linear-gradient(135deg, #F5C518 0%, #C9A000 100%);
+  }
+  .text-gold-gradient {
+    background: linear-gradient(135deg, #F5C518 0%, #E6B800 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .card-hover {
+    @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl;
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}

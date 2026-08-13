@@ -1,0 +1,40 @@
+# Секреты — НИКОГДА не коммитить
+.env
+auth.json
+
+# Отладочные артефакты логина
+debug/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Playwright
+ms-playwright/
+
+# Прочее
+.DS_Store
+
+# ---- Frontend / Node ----
+node_modules/
+dist/
+
+# ---- Rust / Tauri build çıktıları (ASLA commit'lenmez) ----
+target/
+**/gen/apple/build/
+**/gen/android/app/build/
+**/xcuserdata/
+*.xcuserstate
+
+# ---- Mobil env (cihaza özel IP) ----
+frontend/.env.mobile
+frontend/.env.local
+
+# ---- Büyük artefaktlar / yerel db ----
+*.zip
+ruvector.db
+
+# ---- Araç görselleri (repoya gerekmez) ----
+data/images/
