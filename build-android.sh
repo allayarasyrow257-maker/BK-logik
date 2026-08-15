@@ -343,74 +343,128 @@ else
   ok "Rust Android targets installed"
 fi
 
-# ─ Gradle wrapper check ────────────────────────────────────────────────────────
+# ─ Gradle wrapper check + auto-repair ─────────────────────────────────────────
 step "Gradle Wrapper" "Checking gradlew..."
 GRADLEW="$ANDROID_GEN/gradlew"
 if [[ -f "$GRADLEW" ]]; then
   chmod +x "$GRADLEW"
 
-  # Read which Gradle version the wrapper expects
+  # Hangi Gradle versiyonu bekleniyor?
   GRADLE_WRAPPER_PROPS="$ANDROID_GEN/gradle/wrapper/gradle-wrapper.properties"
   GRADLE_VER_EXPECTED=""
   if [[ -f "$GRADLE_WRAPPER_PROPS" ]]; then
-    GRADLE_VER_EXPECTED=$(grep "distributionUrl" "$GRADLE_WRAPPER_PROPS" | grep -oE 'gradle-[0-9.]+' | head -1 | sed 's/gradle-//')
+    GRADLE_VER_EXPECTED=$(grep "distributionUrl" "$GRADLE_WRAPPER_PROPS"       | grep -oE 'gradle-[0-9.]+' | head -1 | sed 's/gradle-//')
   fi
 
-  # Check if already cached in ~/.gradle/wrapper/dists
   GRADLE_CACHE="${GRADLE_USER_HOME:-$HOME/.gradle}/wrapper/dists"
+  GRADLE_VER_DIR="$GRADLE_CACHE/gradle-${GRADLE_VER_EXPECTED}-bin"
+
+  # ── Bozuk/yarım indirme temizliği ──────────────────────────────────────────
+  if [[ -d "$GRADLE_VER_DIR" ]]; then
+    CORRUPT=false
+    find "$GRADLE_VER_DIR" -name "*.part" -o -name "*.zip.lck" 2>/dev/null | grep -q . && CORRUPT=true
+    EXISTING_ZIP=$(find "$GRADLE_VER_DIR" -name "*.zip" ! -name "*.part" 2>/dev/null | head -1)
+    if [[ -n "$EXISTING_ZIP" ]]; then
+      python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).namelist()"         "$EXISTING_ZIP" &>/dev/null || CORRUPT=true
+    fi
+    if $CORRUPT; then
+      warn "Bozuk Gradle cache bulundu — temizleniyor..."
+      rm -rf "$GRADLE_VER_DIR"
+      ok "Temizlendi: $GRADLE_VER_DIR"
+    fi
+  fi
+
+  # ── Sağlıklı cache var mı? ──────────────────────────────────────────────────
   GRADLE_CACHED=false
-  [[ -n "$GRADLE_VER_EXPECTED" ]] && find "$GRADLE_CACHE" -maxdepth 1 -name "gradle-${GRADLE_VER_EXPECTED}*" 2>/dev/null | grep -q . && GRADLE_CACHED=true
+  VALID_ZIP=$(find "$GRADLE_VER_DIR" -name "gradle-${GRADLE_VER_EXPECTED}-bin.zip" 2>/dev/null | head -1)
+  if [[ -n "$VALID_ZIP" ]] &&      python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).namelist()"        "$VALID_ZIP" &>/dev/null; then
+    GRADLE_CACHED=true
+  fi
+  find "$GRADLE_VER_DIR" -maxdepth 3 -name "gradle" -type f 2>/dev/null | grep -q .     && GRADLE_CACHED=true
 
   if $GRADLE_CACHED; then
-    ok "Gradle ${GRADLE_VER_EXPECTED}  ${C}(cached)${N}"
+    ok "Gradle ${GRADLE_VER_EXPECTED}  ${C}(cache'den)${N}"
   else
-    if [[ -n "$GRADLE_VER_EXPECTED" ]]; then
-      info "Gradle ${GRADLE_VER_EXPECTED} not cached — downloading now (~150 MB)..."
-    else
-      info "Downloading Gradle wrapper..."
-    fi
+    # ── curl ile güvenli indirme ────────────────────────────────────────────
+    GH_URL="https://github.com/gradle/gradle-distributions/releases/download/v${GRADLE_VER_EXPECTED}/gradle-${GRADLE_VER_EXPECTED}-bin.zip"
+    TMP_ZIP="/tmp/gradle-${GRADLE_VER_EXPECTED}-bin.zip.dl"
+    echo ""
+    info "Gradle ${GRADLE_VER_EXPECTED} indiriliyor (~131 MB)..."
+    info "URL: $GH_URL"
     echo ""
 
-    # Run gradlew --version which triggers the automatic download
-    # Pipe output live so user sees download progress
-    (cd "$ANDROID_GEN" && ./gradlew --version 2>&1) | while IFS= read -r line; do
-      # Gradle wrapper prints download progress like:
-      #   Downloading https://services.gradle.org/distributions/gradle-8.x-bin.zip
-      #   ..........................................................
-      #   Unzipping /Users/pc/.gradle/wrapper/dists/...
-      if echo "$line" | grep -qiE "^Downloading https"; then
-        printf "  ${C}↓${N}  %s
-" "$line"
-      elif echo "$line" | grep -qE "^\.+$"; then
-        # dots = download in progress, count them as progress
-        dots="${#line}"
-        pct=$(( dots > 100 ? 100 : dots ))
-        width=40
-        filled=$(( pct * width / 100 ))
-        bar=""; for ((i=0; i<width; i++)); do [[ $i -lt $filled ]] && bar+="█" || bar+="░"; done
-        printf "  ${C}[%s]${N}  Downloading Gradle..." "$bar"
-      elif echo "$line" | grep -qiE "^Unzipping"; then
-        echo ""
-        printf "  ${C}⟳${N}  Unzipping Gradle...
-"
-      elif echo "$line" | grep -qiE "^Gradle [0-9]"; then
-        GRADLE_VER_ACTUAL=$(echo "$line" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
-        echo ""
-        ok "Gradle ${GRADLE_VER_ACTUAL}  ${C}(ready)${N}"
-      elif echo "$line" | grep -qE "^(Build time|Revision|Kotlin|Groovy|Ant|JVM|OS)"; then
-        printf "    ${C}%s${N}
-" "$line"
-      elif echo "$line" | grep -qi "error\|failed"; then
-        printf "  ${R}%s${N}
-" "$line"
+    # Hash klasörünü öğren: gradlew'ü kısa çalıştır, klasörü oluşturmasını bekle
+    "$GRADLEW" --version >/dev/null 2>&1 &
+    GW_PID=$!
+    HASH_DIR=""
+    for _ in $(seq 30); do
+      sleep 0.3
+      HASH_DIR=$(find "$GRADLE_VER_DIR" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)
+      [[ -n "$HASH_DIR" ]] && break
+    done
+    kill $GW_PID 2>/dev/null; wait $GW_PID 2>/dev/null || true
+    [[ -z "$HASH_DIR" ]] && { mkdir -p "$GRADLE_VER_DIR/dl"; HASH_DIR="$GRADLE_VER_DIR/dl"; }
+
+    # Eski yarım dosyaları temizle
+    rm -f "$HASH_DIR/"*.part "$HASH_DIR/"*.lck
+
+    TARGET_ZIP="$HASH_DIR/gradle-${GRADLE_VER_EXPECTED}-bin.zip"
+    DOWNLOAD_OK=false
+
+    for attempt in 1 2 3; do
+      [[ $attempt -gt 1 ]] && { echo ""; warn "Yeniden deneniyor ($attempt/3)..."; echo ""; }
+      rm -f "$TMP_ZIP"
+
+      # curl: progress bar, retry yok (bizim döngümüz var), no resume
+      curl -L         --max-time 600         --connect-timeout 30         --no-keepalive         --progress-bar         -o "$TMP_ZIP"         "$GH_URL" 2>&1
+      CURL_EXIT=$?
+
+      echo ""
+      if [[ $CURL_EXIT -ne 0 ]]; then
+        warn "curl hata kodu: $CURL_EXIT"
+        continue
+      fi
+
+      # Bütünlük kontrolü
+      ACTUAL_SIZE=$(wc -c < "$TMP_ZIP" 2>/dev/null || echo 0)
+      info "İndirilen: $(( ACTUAL_SIZE / 1024 / 1024 )) MB"
+
+      if python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).namelist()"            "$TMP_ZIP" &>/dev/null; then
+        mv "$TMP_ZIP" "$TARGET_ZIP"
+        DOWNLOAD_OK=true
+        ok "ZIP doğrulandı — bütünlük OK"
+        break
+      else
+        warn "ZIP bozuk (truncated/incomplete) — yeniden denenecek..."
+        rm -f "$TMP_ZIP"
       fi
     done
+
+    rm -f "$TMP_ZIP"
+
+    if ! $DOWNLOAD_OK; then
+      err "Gradle ${GRADLE_VER_EXPECTED} 3 denemede indirilemedi."
+      echo ""
+      echo -e "  ${W}Manuel yöntem:${N}"
+      echo -e "  1) Tarayıcıdan indir: ${Y}$GH_URL${N}"
+      echo -e "  2) Şu klasöre koy:    ${W}$HASH_DIR/${N}"
+      echo -e "  3) Dosya adı:         ${W}gradle-${GRADLE_VER_EXPECTED}-bin.zip${N}"
+      echo -e "  4) Bu scripti yeniden çalıştır"
+      die "Gradle olmadan build yapılamaz."
+    fi
+
+    # Gradle wrapper'ın unzip etmesini sağla
     echo ""
+    info "Gradle açılıyor (unzip ediliyor)..."
+    (cd "$ANDROID_GEN" && ./gradlew --version 2>&1) | while IFS= read -r line; do
+      echo "$line" | grep -qiE "^(Gradle [0-9]|Unzipping|Build time|Kotlin|JVM)"         && printf "    %s
+" "$line" || true
+    done
+    ok "Gradle ${GRADLE_VER_EXPECTED} kullanıma hazır"
   fi
 else
-  warn "gradlew not found — will be generated by tauri android init"
+  warn "gradlew bulunamadı — tauri android init sırasında oluşturulacak"
 fi
-
 # ─ Abort if fatal deps missing ────────────────────────────────────────────────
 if [[ ${#MISSING_FATAL[@]} -gt 0 ]]; then
   echo ""
