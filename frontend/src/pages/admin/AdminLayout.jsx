@@ -23,7 +23,7 @@ export default function AdminLayout() {
   }
 
   return (
-    <div className="min-h-dvh bg-dark-900 flex w-full overflow-x-hidden">
+    <div className="min-h-screen bg-dark-900 flex w-full overflow-x-hidden">
       {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-64 bg-dark-800 border-r border-white/5 fixed inset-y-0 left-0 z-40">
         {/* Logo */}

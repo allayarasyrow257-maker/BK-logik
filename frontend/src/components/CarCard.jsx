@@ -3,18 +3,18 @@ import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { thumb } from '../utils/img'
 import LazyImage from './LazyImage'
+import { copyText } from '../utils/clipboard'
 
 export default function CarCard({ car }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
 
-  const copyVin = (e) => {
+  const copyVin = async (e) => {
     e.preventDefault()
     e.stopPropagation()
-    navigator.clipboard.writeText(car.vin).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+    await copyText(car.vin)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
@@ -22,7 +22,7 @@ export default function CarCard({ car }) {
       <div className="bg-dark-800 rounded-2xl overflow-hidden border border-white/5 card-hover hover:border-gold-500/30">
 
         {/* Image */}
-        <div className="relative aspect-[16/10] overflow-hidden bg-dark-700">
+        <div className="relative aspect-[16/10] min-h-[180px] overflow-hidden bg-dark-700">
           <LazyImage
             src={thumb(car.cover, 480)}
             alt={car.title}

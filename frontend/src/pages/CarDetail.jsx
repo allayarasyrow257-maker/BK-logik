@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { copyText } from '../utils/clipboard'
 import { useParams, Link, Navigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import carsData from '../../public/cars.json'
@@ -67,7 +68,7 @@ function Gallery({ images, title, t }) {
   return (
     <div>
       {/* Main image */}
-      <div className="relative aspect-[16/10] bg-dark-700 rounded-2xl overflow-hidden mb-3 group">
+      <div className="relative aspect-[16/10] min-h-[180px] bg-dark-700 rounded-2xl overflow-hidden mb-3 group">
         {!imgErr[active] ? (
           <img
             src={images[active]}
@@ -144,8 +145,8 @@ function InfoRow({ label, value, accent, mono }) {
 
 function VinRow({ vin, label, copied: copiedLabel }) {
   const [copied, setCopied] = useState(false)
-  const copy = () => {
-    navigator.clipboard.writeText(vin)
+  const copy = async () => {
+    await copyText(vin)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

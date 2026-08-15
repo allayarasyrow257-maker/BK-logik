@@ -30,7 +30,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-dvh overflow-y-auto flex flex-col items-center justify-center bg-dark-900 px-4 py-8" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2rem)' }}>
+    <div className="min-h-screen overflow-y-auto flex flex-col items-center justify-center bg-dark-900 px-4 py-8" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2rem)' }}>
       {/* Background effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gold-500/5 rounded-full blur-3xl" />

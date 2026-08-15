@@ -17,7 +17,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>1.0.0</string>
+	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -46,8 +46,8 @@
 		<true/>
 	</dict>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Fotograflari galerinize kaydetmek icin izin gerekiyor.</string>
+	<string>BK Logistics needs permission to save vehicle photos to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Arac fotograflarini galerinize kaydetmek icin izin gerekiyor.</string>
+	<string>BK Logistics needs access to your photo library to save vehicle photos.</string>
 </dict>
 </plist>

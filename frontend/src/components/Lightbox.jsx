@@ -257,7 +257,7 @@ function ZoomableImage({ src, alt, showNav, onClose, onPrev, onNext }) {
         fetchPriority="high"
         className={`max-w-full object-contain select-none ${loaded ? 'opacity-100' : 'opacity-0'}`}
         style={{
-          maxHeight: showNav ? 'calc(100dvh - 120px)' : '100dvh',
+          maxHeight: showNav ? 'calc(100vh - 120px)' : '100vh',
           transform: `translate(${tf.x}px, ${tf.y}px) scale(${tf.scale})`,
           transition: animating.current ? 'transform 0.22s ease' : 'none',
           willChange: 'transform',
