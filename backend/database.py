@@ -53,6 +53,19 @@ def init_db() -> None:
                 created_at  TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS bkadmin (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                username    TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                name        TEXT NOT NULL DEFAULT '',
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key         TEXT PRIMARY KEY,
+                value       TEXT NOT NULL DEFAULT ''
+            );
+
             CREATE TABLE IF NOT EXISTS cars (
                 id              TEXT PRIMARY KEY,
                 slug            TEXT NOT NULL,
@@ -77,6 +90,10 @@ def init_db() -> None:
                 key_status      TEXT NOT NULL DEFAULT '',
                 purchase_date   TEXT NOT NULL DEFAULT '',
                 warehouse_date  TEXT NOT NULL DEFAULT '',
+                booking_code    TEXT NOT NULL DEFAULT '',
+                pickup_date     TEXT NOT NULL DEFAULT '',
+                loading_date    TEXT NOT NULL DEFAULT '',
+                dispatch_date   TEXT NOT NULL DEFAULT '',
                 added_at        TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -87,7 +104,6 @@ def init_db() -> None:
                 phone       TEXT NOT NULL DEFAULT '',
                 email       TEXT NOT NULL DEFAULT '',
                 password_hash TEXT NOT NULL,
-                password_plain TEXT NOT NULL DEFAULT '',
                 created_at  TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -113,23 +129,25 @@ def init_db() -> None:
                 ON cars(vin) WHERE vin != '';
         """)
 
-        # Migration: store the plaintext password too, so a dealer can view /
-        # re-issue a customer's password from the admin panel.
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(customers)").fetchall()]
-        if "password_plain" not in cols:
-            conn.execute("ALTER TABLE customers ADD COLUMN password_plain TEXT NOT NULL DEFAULT ''")
-
     # Migration: yeni kolonlari ekle (varsa atla)
     with db_session() as conn:
         assignment_cols = [r[1] for r in conn.execute("PRAGMA table_info(assignments)").fetchall()]
         if "payment_status" not in assignment_cols:
             conn.execute("ALTER TABLE assignments ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'unpaid'")
 
+        customer_cols = [r[1] for r in conn.execute("PRAGMA table_info(customers)").fetchall()]
+        if "password_plain" not in customer_cols:
+            conn.execute("ALTER TABLE customers ADD COLUMN password_plain TEXT NOT NULL DEFAULT ''")
+
         cars_cols = [r[1] for r in conn.execute("PRAGMA table_info(cars)").fetchall()]
         for col, definition in [
             ("key_status", "TEXT NOT NULL DEFAULT ''"),
             ("purchase_date", "TEXT NOT NULL DEFAULT ''"),
             ("warehouse_date", "TEXT NOT NULL DEFAULT ''"),
+            ("booking_code", "TEXT NOT NULL DEFAULT ''"),
+            ("pickup_date", "TEXT NOT NULL DEFAULT ''"),
+            ("loading_date", "TEXT NOT NULL DEFAULT ''"),
+            ("dispatch_date", "TEXT NOT NULL DEFAULT ''"),
         ]:
             if col not in cars_cols:
                 conn.execute(f"ALTER TABLE cars ADD COLUMN {col} {definition}")

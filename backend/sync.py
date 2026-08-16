@@ -50,6 +50,11 @@ LABEL_MAP = {
     "\u10e1\u10d0\u10ec\u10e7\u10dd\u10d1\u10e8\u10d8 \u10db\u10d8\u10e2\u10d0\u10dc\u10d0": "warehouseDate",  # საწყობში მიტანა
     "\u10e8\u10d4\u10eb\u10d4\u10dc\u10d8\u10e1 \u10d7\u10d0\u10e0\u10d8\u10d2\u10d8": "purchaseDate",         # შეძენის თარიღი
     "\u10e8\u10d4\u10eb\u10d4\u10dc\u10d0": "purchaseDate",                      # შეძენა
+    "ჯავშნის კოდი": "bookingCode",           # Код бронирования
+    "ყიდვის თარიღი": "purchaseDate",          # Дата покупки (duzeltme)
+    "აყვანის დრო": "pickupDate",             # Время получения
+    "ჩატვირთვა": "loadingDate",              # Загрузка
+    "გამოგზავნა": "dispatchDate",            # Отправил
 }
 
 # Gurcuce durum -> Ingilizce eslesmesi
@@ -83,18 +88,16 @@ def _parse_price(text: str) -> float | None:
     """'1 325,00 $' -> 1325.0, '$ 9,890.00' -> 9890.0. Taninmazsa None."""
     if not text:
         return None
-    # Sadece rakam, virgul ve nokta birak (para simgesi, bosluk, nbsp temizle)
     s = re.sub(r"[^\d.,]", "", text)
     if not s:
         return None
     if "," in s and "." in s:
-        # Hangi ayrac sagdaysa o ondalik
         if s.rfind(",") > s.rfind("."):
-            s = s.replace(".", "").replace(",", ".")  # 1.325,00 -> 1325.00
+            s = s.replace(".", "").replace(",", ".")
         else:
-            s = s.replace(",", "")                     # 9,890.00 -> 9890.00
+            s = s.replace(",", "")
     elif "," in s:
-        s = s.replace(",", ".")                        # 1 325,00 -> 1325.00
+        s = s.replace(",", ".")
     try:
         return float(s)
     except ValueError:
@@ -122,15 +125,95 @@ def _parse_geo_date(text: str) -> str:
 
 
 def collect_car_list(page) -> list[dict]:
-    """assigned-cars sayfasindan tum araclarin temel bilgilerini topla."""
+    """assigned-cars sayfasindan TUM araclari topla.
+
+    Sayfalama server-side AJAX (action=carspace_load_car_page). Tarayicidaki
+    session/nonce ile her sayfayi dogrudan AJAX'tan cekip tabloya yerlestiririz;
+    boylece butun sayfalar (ve transport fiyatlari) guvenilir sekilde gelir.
+    """
     cars = []
 
-    page.goto(ASSIGNED_CARS_URL, wait_until="domcontentloaded", timeout=60000)
+    page.goto(ASSIGNED_CARS_URL, wait_until="domcontentloaded", timeout=90000)
     page.wait_for_timeout(3000)
 
-    while True:
-        # Tablodaki tum satirlari oku
+    # Sayfalama/AJAX konfigurasyonunu tablodan ve localized JS'den oku
+    cfg = page.evaluate("""() => {
+        const t = document.querySelector('#carTable');
+        let ajaxUrl=null,nonce=null;
+        if (typeof carspaceDashboardL10n!=='undefined'){ajaxUrl=carspaceDashboardL10n.ajaxUrl;nonce=carspaceDashboardL10n.ajaxNonce;}
+        else if (typeof carspace_notification_data!=='undefined'){ajaxUrl=carspace_notification_data.ajax_url;nonce=carspace_notification_data.nonce;}
+        else if (typeof carspace_ajax!=='undefined'){ajaxUrl=carspace_ajax.ajax_url;nonce=carspace_ajax.nonce;}
+        return {
+            totalPages: parseInt(t && t.dataset.totalPages) || 1,
+            perPage: parseInt(t && t.dataset.itemsPerPage) || 15,
+            totalItems: parseInt(t && t.dataset.totalItems) || null,
+            cacheKey: (t && t.dataset.cacheKey) || '',
+            ajaxUrl, nonce,
+        };
+    }""")
+
+    total_pages = int(cfg.get("totalPages") or 1)
+    print(f"[sync] toplam {cfg.get('totalItems')} arac, {total_pages} sayfa "
+          f"(sayfa basi {cfg.get('perPage')})", flush=True)
+
+    if not cfg.get("ajaxUrl") or not cfg.get("cacheKey"):
+        print("[sync] UYARI: AJAX konfigurasyonu bulunamadi, sadece ilk sayfa "
+              "DOM'dan okunacak", flush=True)
+
+    for pno in range(1, total_pages + 1):
+        # Sayfa satirlarini AJAX ile getirip tabloya yerlestir
+        info = {"ok": False}
+        if cfg.get("ajaxUrl") and cfg.get("cacheKey"):
+            info = page.evaluate("""async ([cfg, pno]) => {
+                const body = new URLSearchParams({
+                    action:'carspace_load_car_page', nonce:cfg.nonce||'',
+                    cache_key:cfg.cacheKey||'', page:String(pno),
+                    per_page:String(cfg.perPage||15),
+                    filter_title:'',filter_vin:'',filter_lot:'',
+                    filter_container:'',filter_date_from:'',filter_date_to:''
+                });
+                try {
+                    const r = await fetch(cfg.ajaxUrl,{method:'POST',
+                        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                        body, credentials:'same-origin'});
+                    const j = await r.json();
+                    if (j && j.success && j.data && j.data.html) {
+                        document.querySelector('#carTableBody').innerHTML = j.data.html;
+                        return {ok:true, items:j.data.total_items};
+                    }
+                    return {ok:false, status:r.status};
+                } catch (e) { return {ok:false, err:String(e)}; }
+            }""", [cfg, pno])
+
+        if not (info and info.get("ok")):
+            # AJAX olmadi: sadece sayfa 1 icin mevcut DOM'a guven
+            if pno == 1:
+                print(f"[sync] sayfa 1 AJAX'siz, mevcut DOM okunuyor", flush=True)
+            else:
+                print(f"[sync] UYARI: sayfa {pno} AJAX ile alinamadi ({info}) "
+                      f"- atlaniyor", flush=True)
+                continue
+
+        # Fiyatlar AJAX html'inde hazir; yine de DOM otursun diye kisa bekleme
+        page.wait_for_timeout(400)
+
+        # TESHIS: bu sayfanin DOM'unu kaydet
+        try:
+            _dbg = ROOT / "debug"
+            _dbg.mkdir(exist_ok=True)
+            (_dbg / f"live-assigned-p{pno}.html").write_text(
+                page.content(), encoding="utf-8"
+            )
+        except Exception as _e:
+            print(f"[sync] teshis dump hatasi: {_e}", flush=True)
+
         rows = page.locator("tbody#carTableBody tr[data-vin]").all()
+        _n_price = page.locator(
+            "td.transport-price-column .woocommerce-Price-amount"
+        ).count()
+        print(f"[sync] sayfa {pno}/{total_pages}: {len(rows)} arac, "
+              f"{_n_price} transport-fiyat hucresi", flush=True)
+
         for row in rows:
             vin = (row.get_attribute("data-vin") or "").upper()
             if not vin or any(c["vin"] == vin for c in cars):
@@ -147,22 +230,20 @@ def collect_car_list(page) -> list[dict]:
             source_url = link_el.get_attribute("href") if link_el.count() else ""
 
             # Durum (status hucresindeki badge'i oku)
-            status_cell = row.locator("td[data-label='\u10e1\u10e2\u10d0\u10e2\u10e3\u10e1\u10d8'] span.badge, td:last-child span.badge")
+            status_cell = row.locator("td[data-label='სტატუსი'] span.badge, td:last-child span.badge")
             status_raw = ""
             if status_cell.count():
                 status_raw = status_cell.first.inner_text().strip()
-            # Sayi olan durumlar gecersiz, temizle
             if status_raw.isdigit():
                 status_raw = ""
             status = STATUS_MAP.get(status_raw, status_raw)
 
             # Auction city
-            transport_cell = row.locator("td[data-auction-city]").first
+            tc = row.locator("td[data-auction-city]").first
             auction_city = ""
-            if transport_cell.count():
-                auction_city = transport_cell.get_attribute("data-auction-city") or ""
+            if tc.count():
+                auction_city = tc.get_attribute("data-auction-city") or ""
 
-            # Slug
             slug = ""
             if source_url:
                 slug = urlparse(source_url).path.rstrip("/").split("/")[-1]
@@ -177,13 +258,18 @@ def collect_car_list(page) -> list[dict]:
                 transport_price = float(transport_str) if transport_str else None
             except ValueError:
                 pass
-            # data-transport-price attribute'u kaynakta bos geliyor;
-            # fiyat hucrenin metninde ("1 325,00 $"). Oradan oku.
             if transport_price is None:
                 tcell = row.locator("td.transport-price-column").first
                 if tcell.count():
-                    transport_price = _parse_price(tcell.inner_text())
+                    amt = tcell.locator(".woocommerce-Price-amount").first
+                    txt = amt.inner_text() if amt.count() else tcell.inner_text()
+                    transport_price = _parse_price(txt)
 
+            print(
+                f"[sync]   {vin}  fiyat=${car_price}  transport=${transport_price}"
+                f"  sehir={auction_city or '-'}  durum={status}",
+                flush=True,
+            )
             cars.append({
                 "id": slug or vin.lower(),
                 "slug": slug,
@@ -198,30 +284,10 @@ def collect_car_list(page) -> list[dict]:
                 "status": status,
             })
 
-        # Sonraki sayfa var mi?
-        current_page = page.evaluate("""
-            () => {
-                const el = document.querySelector('#clientPagination .page-item.active a');
-                return el ? parseInt(el.dataset.page) : 1;
-            }
-        """)
-        # Sayfa 2 butonuna tikla
-        next_page = current_page + 1
-        next_link = page.locator(f"#clientPagination a[data-page='{next_page}']")
-        if next_link.count() == 0:
-            break
-
-        try:
-            next_link.click(timeout=5000)
-            page.wait_for_timeout(2000)
-        except Exception:
-            break
-
+    n_tp = sum(1 for c in cars if c.get("transport_price") is not None)
+    print(f"[sync] === liste bitti: {len(cars)} arac, "
+          f"{n_tp} tanesinde transport fiyati dolu ===", flush=True)
     return cars
-
-
-# ── Adim 2: Arac detaylarini scrape et ─────────────────────────────────
-
 
 def scrape_car_details(page, source_url: str) -> dict:
     """Urun sayfasindan detayli bilgi ve resimleri cek."""
@@ -285,6 +351,10 @@ def scrape_car_details(page, source_url: str) -> dict:
         "key_status": key_status,
         "purchase_date": _parse_geo_date(specs.get("purchaseDate", "")),
         "warehouse_date": _parse_geo_date(specs.get("warehouseDate", "")),
+        "booking_code": specs.get("bookingCode", ""),
+        "pickup_date": _parse_geo_date(specs.get("pickupDate", "")),
+        "loading_date": _parse_geo_date(specs.get("loadingDate", "")),
+        "dispatch_date": _parse_geo_date(specs.get("dispatchDate", "")),
         "cover": images[0] if images else "",
         "images": images,
     }
@@ -355,6 +425,7 @@ def save_to_db(car_data: dict) -> None:
                 arrival_date, auction_city, car_price, transport_price,
                 status, cover, images, local_images,
                 key_status, purchase_date, warehouse_date,
+                booking_code, pickup_date, loading_date, dispatch_date,
                 added_at, updated_at
             ) VALUES (
                 :id, :slug, :source_url, :title, :vin, :lot_number,
@@ -362,6 +433,7 @@ def save_to_db(car_data: dict) -> None:
                 :arrival_date, :auction_city, :car_price, :transport_price,
                 :status, :cover, :images, :local_images,
                 :key_status, :purchase_date, :warehouse_date,
+                :booking_code, :pickup_date, :loading_date, :dispatch_date,
                 :added_at, :updated_at
             )
             ON CONFLICT(id) DO UPDATE SET
@@ -385,6 +457,10 @@ def save_to_db(car_data: dict) -> None:
                 key_status = excluded.key_status,
                 purchase_date = excluded.purchase_date,
                 warehouse_date = excluded.warehouse_date,
+                booking_code = excluded.booking_code,
+                pickup_date = excluded.pickup_date,
+                loading_date = excluded.loading_date,
+                dispatch_date = excluded.dispatch_date,
                 updated_at = excluded.updated_at
         """, car_data)
 
@@ -436,7 +512,13 @@ def run_sync(
         # 2. Her arac icin detay + resim
         for idx, car_basic in enumerate(car_list, 1):
             try:
-                print(f"\n2/3 [{idx}/{len(car_list)}] {car_basic['title']}")
+                print(
+                    f"\n2/3 [{idx}/{len(car_list)}] {car_basic['title']}  "
+                    f"| fiyat=${car_basic['car_price']} "
+                    f"| transport=${car_basic['transport_price']} "
+                    f"| sehir={car_basic['auction_city'] or '-'}",
+                    flush=True,
+                )
 
                 # Detay sayfasini scrape et
                 details = {}
@@ -472,6 +554,10 @@ def run_sync(
                     "key_status": details.get("key_status", ""),
                     "purchase_date": details.get("purchase_date", ""),
                     "warehouse_date": details.get("warehouse_date", ""),
+                    "booking_code": details.get("booking_code", ""),
+                    "pickup_date": details.get("pickup_date", ""),
+                    "loading_date": details.get("loading_date", ""),
+                    "dispatch_date": details.get("dispatch_date", ""),
                     "added_at": now,
                     "updated_at": now,
                 }
@@ -487,7 +573,10 @@ def run_sync(
                 # DB'ye kaydet
                 save_to_db(car_data)
                 results["synced"] += 1
-                print(f"    DB'ye kaydedildi.")
+                print(
+                    f"    DB'ye kaydedildi (transport=${car_data['transport_price']}).",
+                    flush=True,
+                )
 
             except Exception as e:
                 err_msg = f"{car_basic['title']}: {e}"
@@ -498,10 +587,13 @@ def run_sync(
 
     results["finished_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    print(f"\n3/3 Senkronizasyon tamamlandi!")
-    print(f"    Toplam: {results['total']}")
-    print(f"    Basarili: {results['synced']}")
-    print(f"    Hata: {len(results['errors'])}")
+    n_tp = sum(1 for c in car_list if c.get("transport_price") is not None)
+    results["transport_filled"] = n_tp
+    print(f"\n3/3 Senkronizasyon tamamlandi!", flush=True)
+    print(f"    Toplam: {results['total']}", flush=True)
+    print(f"    Basarili: {results['synced']}", flush=True)
+    print(f"    Transport dolu: {n_tp}/{results['total']}", flush=True)
+    print(f"    Hata: {len(results['errors'])}", flush=True)
 
     return results
 
