@@ -2,7 +2,7 @@ name: bklogics
 options:
   bundleIdPrefix: com.bklogistics.app
   deploymentTarget:
-    iOS: 14.0
+    iOS: 16.0
 fileGroups: [../../src]
 configs:
   debug: debug
@@ -53,7 +53,7 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 1.0.0
-        CFBundleVersion: "1.0.0"
+        CFBundleVersion: "1"
     entitlements:
       path: bklogics_iOS/bklogics_iOS.entitlements
     scheme:

@@ -240,7 +240,7 @@ function CustomerDetailSheet({ customer, onClose, t }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-dark-900 sm:bg-dark-800 border-t sm:border border-white/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[92dvh] flex flex-col"
+        className="bg-dark-900 sm:bg-dark-800 border-t sm:border border-white/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)', paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
